@@ -1,5 +1,5 @@
 // API client for communicating with the backend
-import { CLIENT_API_URL, ADMIN_API_URL } from './config';
+import { CLIENT_API_URL, ADMIN_API_PREFIX, CORS_CONFIG } from './config';
 
 /**
  * Common fetch wrapper with error handling
@@ -8,15 +8,16 @@ const fetchWithAuth = async (endpoint, options = {}) => {
   // Determine if we're in a browser environment
   const isBrowser = typeof window !== 'undefined';
   
-  // Use the appropriate base URL
+  // Use the appropriate base URL and handle admin endpoints
   const isAdminEndpoint = endpoint.startsWith('/admin');
-  const baseUrl = isAdminEndpoint ? ADMIN_API_URL : CLIENT_API_URL;
+  let url = `${CLIENT_API_URL}`;
   
-  // Ensure endpoint begins with a slash and does not include /api prefix
-  // (since it's already in the base URL)
+  // Ensure endpoint begins with a slash and handle admin endpoints
   let normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  // Remove duplicate /api if present
-  normalizedEndpoint = normalizedEndpoint.replace(/^\/api/, '');
+  
+  // For admin endpoints, we'll just use the original CLIENT_API_URL + the endpoint
+  // For other endpoints, we use CLIENT_API_URL directly
+  url += normalizedEndpoint;
   
   try {
     // Create a AbortController to handle timeouts
@@ -24,7 +25,6 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
     // Handle query parameters properly
-    let url = `${baseUrl}${normalizedEndpoint}`;
     if (options.params) {
       const params = new URLSearchParams();
       Object.entries(options.params).forEach(([key, value]) => {
@@ -55,6 +55,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       },
       credentials: 'include', // Important for cookies/sessions
       signal: controller.signal,
+      mode: 'cors', // Explicitly set CORS mode
     });
     
     clearTimeout(timeoutId);
@@ -138,7 +139,7 @@ export const auth = {
 export const admin = {
   // Get all reports
   getReports: async (status = null) => {
-    return fetchWithAuth('/admin/reports', {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/reports`, {
       method: 'GET',
       params: status ? { status } : undefined
     });
@@ -146,7 +147,7 @@ export const admin = {
   
   // Update report status
   updateReportStatus: async (reportId, status) => {
-    return fetchWithAuth(`/admin/reports/${reportId}`, {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/reports/${reportId}`, {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
@@ -154,14 +155,14 @@ export const admin = {
   
   // Get blocked users list
   getBlockedUsers: async () => {
-    return fetchWithAuth('/admin/blocked-users', {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/blocked-users`, {
       method: 'GET',
     });
   },
   
   // Block a user
   blockUser: async (blockerId, blockedId) => {
-    return fetchWithAuth('/admin/block-user', {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/block-user`, {
       method: 'POST',
       body: JSON.stringify({ blocker_id: blockerId, blocked_id: blockedId }),
     });
@@ -169,28 +170,28 @@ export const admin = {
   
   // Unblock a user
   unblockUser: async (blockId) => {
-    return fetchWithAuth(`/admin/unblock-user/${blockId}`, {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/unblock-user/${blockId}`, {
       method: 'DELETE',
     });
   },
   
   // Get message details
   getMessageDetails: async (messageType, messageId) => {
-    return fetchWithAuth(`/admin/message/${messageType}/${messageId}`, {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/message/${messageType}/${messageId}`, {
       method: 'GET',
     });
   },
   
   // Delete a message
   deleteMessage: async (messageType, messageId) => {
-    return fetchWithAuth(`/admin/message/${messageType}/${messageId}`, {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/message/${messageType}/${messageId}`, {
       method: 'DELETE',
     });
   },
   
   // Get dashboard stats
   getDashboardStats: async () => {
-    return fetchWithAuth('/admin/dashboard-stats', {
+    return fetchWithAuth(`${ADMIN_API_PREFIX}/dashboard-stats`, {
       method: 'GET',
     });
   },
@@ -213,6 +214,7 @@ export const testConnection = async () => {
         'Origin': window.location.origin,
       },
       signal: controller.signal,
+      mode: 'cors', // Explicitly set CORS mode
     });
     
     clearTimeout(timeoutId);
@@ -231,8 +233,26 @@ export const testConnection = async () => {
   }
 };
 
+// Provide a mock login function for development when the backend is not available
+export const mockLogin = async (email, password) => {
+  console.warn('Using mock login since API is unavailable');
+  return {
+    authenticated: true,
+    user: {
+      id: 1,
+      email: email || 'admin@example.com',
+      username: 'admin',
+      is_moderator: true,
+      profile: {
+        display_name: 'Admin User',
+      }
+    }
+  };
+};
+
 export default {
   auth,
   admin,
   testConnection,
+  mockLogin,
 };
