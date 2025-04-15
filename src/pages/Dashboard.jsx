@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { admin } from '../lib/api';
 import { groupReportsByMessage } from '../lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 import ReportItem from '../components/ReportItem';
 import MessageView from '../components/MessageView';
 import StatsCard from '../components/StatsCard';
@@ -12,8 +13,78 @@ import {
   CheckCircle2,
   Users,
   ShieldAlert,
-  MessageSquare
+  MessageSquare,
+  Info
 } from 'lucide-react';
+
+// Mock data for development when backend is unavailable
+const MOCK_REPORTS = [
+  {
+    id: 1,
+    reporter_id: 4,
+    reported_user_id: 7,
+    message_id: 120,
+    message_type: 'public',
+    reason: 'Inappropriate content',
+    status: 'pending',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    reporter: { id: 4, username: 'johndoe', display_name: 'John Doe' },
+    reported_user: { id: 7, username: 'problematicuser', display_name: 'Problem User' },
+    message: {
+      id: 120,
+      content: 'This is a sample reported message with inappropriate content that would be flagged by users.',
+      created_at: new Date(Date.now() - 7200000).toISOString(),
+      user_id: 7
+    }
+  },
+  {
+    id: 2,
+    reporter_id: 5,
+    reported_user_id: 7,
+    message_id: 120,
+    message_type: 'public',
+    reason: 'Harassment',
+    status: 'pending',
+    created_at: new Date(Date.now() - 4800000).toISOString(),
+    reporter: { id: 5, username: 'janedoe', display_name: 'Jane Doe' },
+    reported_user: { id: 7, username: 'problematicuser', display_name: 'Problem User' },
+    message: {
+      id: 120,
+      content: 'This is a sample reported message with inappropriate content that would be flagged by users.',
+      created_at: new Date(Date.now() - 7200000).toISOString(),
+      user_id: 7
+    }
+  },
+  {
+    id: 3,
+    reporter_id: 6,
+    reported_user_id: 8,
+    message_id: 121,
+    message_type: 'direct',
+    reason: 'Spam content',
+    status: 'reviewed',
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    reporter: { id: 6, username: 'alexsmith', display_name: 'Alex Smith' },
+    reported_user: { id: 8, username: 'spammer', display_name: 'Spam Account' },
+    message: {
+      id: 121,
+      content: 'This is a direct message containing spam content that would be reported by users.',
+      created_at: new Date(Date.now() - 90000000).toISOString(),
+      sender_id: 8,
+      recipient_id: 6
+    }
+  }
+];
+
+const MOCK_STATS = {
+  pending_reports: 2,
+  total_reports: 3,
+  blocked_users: 1,
+  total_users: 150,
+  moderators: 3,
+  public_messages: 842,
+  direct_messages: 1258
+};
 
 const Dashboard = () => {
   // State for reports
@@ -33,18 +104,47 @@ const Dashboard = () => {
   const [selectedMessageType, setSelectedMessageType] = useState(null);
   const [selectedReports, setSelectedReports] = useState([]);
   
+  // Get auth context
+  const { useMockData } = useAuth();
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
   // Load reports from the API
   const loadReports = async () => {
     try {
       setLoading(true);
       setError('');
       
-      const response = await admin.getReports(statusFilter || null);
-      
-      if (response && response.reports) {
-        setReports(response.reports);
+      // Use real or mock data
+      if (useMockData || isDevelopment) {
+        try {
+          // Try to get real data first
+          const response = await admin.getReports(statusFilter || null);
+          
+          if (response && response.reports) {
+            setReports(response.reports);
+          } else {
+            throw new Error('Invalid response format');
+          }
+        } catch (error) {
+          console.warn('Using mock reports data:', error);
+          
+          // Filter mock data if needed
+          let filteredReports = MOCK_REPORTS;
+          if (statusFilter) {
+            filteredReports = MOCK_REPORTS.filter(report => report.status === statusFilter);
+          }
+          
+          setReports(filteredReports);
+        }
       } else {
-        throw new Error('Invalid response format');
+        // Normal flow - get real data
+        const response = await admin.getReports(statusFilter || null);
+        
+        if (response && response.reports) {
+          setReports(response.reports);
+        } else {
+          throw new Error('Invalid response format');
+        }
       }
     } catch (error) {
       console.error('Error loading reports:', error);
@@ -59,10 +159,30 @@ const Dashboard = () => {
     try {
       setStatsLoading(true);
       
-      const response = await admin.getDashboardStats();
-      
-      if (response && response.stats) {
-        setStats(response.stats);
+      // Use real or mock data
+      if (useMockData || isDevelopment) {
+        try {
+          // Try to get real data first
+          const response = await admin.getDashboardStats();
+          
+          if (response && response.stats) {
+            setStats(response.stats);
+          } else {
+            throw new Error('Invalid stats response');
+          }
+        } catch (error) {
+          console.warn('Using mock stats data:', error);
+          setStats(MOCK_STATS);
+        }
+      } else {
+        // Normal flow - get real data
+        const response = await admin.getDashboardStats();
+        
+        if (response && response.stats) {
+          setStats(response.stats);
+        } else {
+          throw new Error('Invalid stats response');
+        }
       }
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -74,12 +194,12 @@ const Dashboard = () => {
   // Load data on component mount and when status filter changes
   useEffect(() => {
     loadReports();
-  }, [statusFilter]);
+  }, [statusFilter, useMockData]);
   
   // Load stats on component mount
   useEffect(() => {
     loadStats();
-  }, []);
+  }, [useMockData]);
   
   // Handle click on a report item
   const handleReportClick = async (report) => {
@@ -87,20 +207,71 @@ const Dashboard = () => {
       const messageId = report.message_id;
       const messageType = report.message_type;
       
-      // Get message details from API
-      const response = await admin.getMessageDetails(messageType, messageId);
-      
-      if (response && response.message) {
-        // Find all reports for this message
-        const relatedReports = reports.filter(
-          r => r.message_id === messageId && r.message_type === messageType
-        );
-        
-        setSelectedMessage(response.message);
-        setSelectedMessageType(messageType);
-        setSelectedReports(relatedReports);
+      // For mock data, just use the message from the report
+      if (useMockData || isDevelopment) {
+        try {
+          // Try to get real data first
+          const response = await admin.getMessageDetails(messageType, messageId);
+          
+          if (response && response.message) {
+            const message = response.message;
+            
+            // Find all reports for this message
+            const relatedReports = reports.filter(
+              r => r.message_id === messageId && r.message_type === messageType
+            );
+            
+            setSelectedMessage(message);
+            setSelectedMessageType(messageType);
+            setSelectedReports(relatedReports);
+          } else {
+            throw new Error('Message not found');
+          }
+        } catch (error) {
+          console.warn('Using mock message data:', error);
+          
+          // Use the message from the report
+          setSelectedMessage(report.message);
+          
+          // Construct the full message object
+          if (messageType === 'direct') {
+            setSelectedMessage({
+              ...report.message,
+              sender: report.reported_user,
+              recipient: report.reporter
+            });
+          } else {
+            setSelectedMessage({
+              ...report.message,
+              user: report.reported_user
+            });
+          }
+          
+          setSelectedMessageType(messageType);
+          
+          // Find all reports for this message
+          const relatedReports = reports.filter(
+            r => r.message_id === messageId && r.message_type === messageType
+          );
+          
+          setSelectedReports(relatedReports);
+        }
       } else {
-        throw new Error('Message not found');
+        // Get message details from API
+        const response = await admin.getMessageDetails(messageType, messageId);
+        
+        if (response && response.message) {
+          // Find all reports for this message
+          const relatedReports = reports.filter(
+            r => r.message_id === messageId && r.message_type === messageType
+          );
+          
+          setSelectedMessage(response.message);
+          setSelectedMessageType(messageType);
+          setSelectedReports(relatedReports);
+        } else {
+          throw new Error('Message not found');
+        }
       }
     } catch (error) {
       console.error('Error getting message details:', error);
@@ -166,6 +337,17 @@ const Dashboard = () => {
           <span>Refresh</span>
         </button>
       </div>
+      
+      {/* Development mode notice */}
+      {(isDevelopment || useMockData) && (
+        <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 p-4 rounded-md flex items-start">
+          <Info className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium">Development Mode</p>
+            <p>Using {useMockData ? 'mock data' : 'real API data with mock fallback'}. The system will attempt to connect to the backend, but will use mock data if the connection fails.</p>
+          </div>
+        </div>
+      )}
       
       {/* Stats cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
