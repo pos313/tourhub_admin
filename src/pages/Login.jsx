@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LockKeyhole, Mail, AlertCircle } from 'lucide-react';
+import { LockKeyhole, Mail, AlertCircle, Info } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, useMockData } = useAuth();
   const navigate = useNavigate();
+  
+  // When in development, show placeholder values
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const emailPlaceholder = isDevelopment ? 'admin@example.com' : 'email@example.com';
+  const passwordPlaceholder = isDevelopment ? 'admin123' : '••••••••';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -34,7 +39,16 @@ const Login = () => {
       navigate('/');
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.message || 'Failed to login. Please check your credentials.');
+      
+      // Create more user-friendly error message
+      let errorMessage = error.message || 'Failed to login. Please check your credentials.';
+      
+      // Add helpful message for CORS errors
+      if (errorMessage.includes('CORS') || errorMessage.includes('connect to the server')) {
+        errorMessage = 'Unable to connect to the server. This might be a CORS issue or the backend server is not running. If you are in development mode, you can still login with any credentials for testing.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -56,6 +70,14 @@ const Login = () => {
             </div>
           )}
           
+          {/* Development mode notice */}
+          {isDevelopment && (
+            <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 p-3 rounded-md mb-4 flex items-start">
+              <Info className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+              <p>Development mode: You can use any credentials for testing. Mock data will be used if the backend is not available.</p>
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div>
@@ -72,7 +94,7 @@ const Login = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="block w-full pl-10 py-2 border border-input rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="admin@example.com"
+                    placeholder={emailPlaceholder}
                     required
                   />
                 </div>
@@ -92,7 +114,7 @@ const Login = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full pl-10 py-2 border border-input rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="••••••••"
+                    placeholder={passwordPlaceholder}
                     required
                   />
                 </div>
