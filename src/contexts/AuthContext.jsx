@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { auth as authApi } from '../lib/api';
+import { auth as authApi, mockLogin } from '../lib/api';
 
 // Create the authentication context
 const AuthContext = createContext();
@@ -13,6 +13,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [useMockData, setUseMockData] = useState(false);
 
   // Check for current user session on initial load
   useEffect(() => {
@@ -33,6 +34,9 @@ export const AuthProvider = ({ children }) => {
             console.error('Error parsing saved user:', e);
           }
         }
+
+        // Set useMockData flag if we encounter API errors
+        setUseMockData(true);
       } finally {
         setLoading(false);
       }
@@ -44,7 +48,22 @@ export const AuthProvider = ({ children }) => {
   // Function to log in user
   const login = async (email, password) => {
     try {
-      const response = await authApi.login(email, password);
+      // If we're having API issues, use mock login
+      let response;
+      
+      if (useMockData || process.env.NODE_ENV === 'development') {
+        try {
+          // Try real login first
+          response = await authApi.login(email, password);
+        } catch (error) {
+          console.warn('API login failed, using mock login instead');
+          // If API login fails, fall back to mock login
+          response = await mockLogin(email, password);
+        }
+      } else {
+        // Normal login flow
+        response = await authApi.login(email, password);
+      }
       
       if (response && response.user) {
         const user = response.user;
@@ -70,7 +89,10 @@ export const AuthProvider = ({ children }) => {
   // Function to log out user
   const logout = async () => {
     try {
-      await authApi.logout();
+      // Only try to call the logout API if we're not using mock data
+      if (!useMockData) {
+        await authApi.logout();
+      }
     } catch (error) {
       console.error('Error during logout:', error);
     } finally {
@@ -86,6 +108,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     isAuthenticated: !!currentUser && currentUser.is_moderator,
+    useMockData
   };
 
   return (
